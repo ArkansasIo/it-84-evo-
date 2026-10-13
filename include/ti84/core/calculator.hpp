@@ -8,6 +8,7 @@ class Calculator {
 public:
  Result<double> calculate(const std::string& text);
  void setVariable(std::string name,double value);
+ void clearVariables() noexcept { variables_.clear(); }
  const Variables& variables() const noexcept{return variables_;}
  CalculatorSettings& settings() noexcept{return settings_;}
 private:
