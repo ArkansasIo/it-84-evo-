@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>TI-84 Evo Lab — Calculator Studio</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">∑</div><div><strong>TI-84 Evo Lab</strong><small>CALCULATOR STUDIO <span class="dot"></span> LOCAL PREVIEW</small></div></div>
+      <div class="top-actions"><span class="chip" id="angleChip">RAD</span><button class="ghost" id="exportBtn">Export workspace</button><label class="ghost import-label">Import<input id="importFile" type="file" accept="application/json"></label></div>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar">
+        <p class="eyebrow">WORKSPACE</p>
+        <button class="nav active" data-view="home"><span>⌂</span> Calculator</button>
+        <button class="nav" data-view="graph"><span>⌁</span> Function graph</button>
+        <button class="nav" data-view="program"><span>▤</span> Program editor</button>
+        <button class="nav" data-view="settings"><span>⚙</span> Settings</button>
+        <div class="side-card"><span class="status-led"></span><div><b>Core status</b><small>GUI preview mode</small></div></div>
+        <p class="side-note">Independent educational software. Not affiliated with Texas Instruments.</p>
+      </aside>
+      <main class="main">
+        <section class="view" id="view-home">
+          <div class="page-heading"><div><p class="eyebrow">HOME / EVALUATION</p><h1>Calculator</h1><p class="muted">Evaluate expressions, store variables, and review your work.</p></div><div class="mini-stat"><span>HISTORY</span><b id="historyCount">0 entries</b></div></div>
+          <div class="calc-grid">
+            <div class="panel calculator-panel">
+              <div class="display"><div class="display-top"><span>REAL MODE</span><span id="modeLabel">RAD · FLOAT</span></div><div id="expressionDisplay" class="expression">0</div><div class="result-row"><span>RESULT</span><output id="resultDisplay">Ready</output></div><div id="errorDisplay" role="status"></div></div>
+              <div class="keypad" id="keypad">
+                <button data-key="sin(">sin</button><button data-key="cos(">cos</button><button data-key="tan(">tan</button><button data-key="sqrt(">√</button><button class="danger" data-action="clear">AC</button>
+                <button data-key="7">7</button><button data-key="8">8</button><button data-key="9">9</button><button data-key="/">÷</button><button data-key="(">(</button>
+                <button data-key="4">4</button><button data-key="5">5</button><button data-key="6">6</button><button data-key="*">×</button><button data-key=")">)</button>
+                <button data-key="1">1</button><button data-key="2">2</button><button data-key="3">3</button><button data-key="-">−</button><button data-key="^">xʸ</button>
+                <button data-key="0">0</button><button data-key=".">.</button><button data-key="pi">π</button><button data-key="+">+</button><button class="primary" data-action="equals">ENTER ↵</button>
+                <button class="wide" data-key="Ans">Ans</button><button class="wide" data-key="x">x</button><button class="wide" data-action="backspace">⌫</button><button class="wide" data-key=",">,</button>
+              </div>
+              <form id="calcForm" class="input-row"><input id="expressionInput" autocomplete="off" spellcheck="false" placeholder="e.g. (3+4)^2 or sin(pi/2)" aria-label="Expression"><button class="primary" type="submit">Evaluate</button></form>
+            </div>
+            <div class="right-stack">
+              <div class="panel">
+                <div class="panel-heading"><div><p class="eyebrow">VISUALIZATION</p><h2>Quick plot</h2></div><button class="text-button" data-navigate="graph">Open graph →</button></div>
+                <canvas id="miniGraph" width="640" height="300" aria-label="Function graph"></canvas><div class="plot-caption"><span><i class="line-key"></i> y = <b id="plotExpression">sin(x)</b></span><span id="plotDomain">x: −10 to 10</span></div>
+              </div>
+              <div class="panel history-panel"><div class="panel-heading"><div><p class="eyebrow">SESSION</p><h2>Recent calculations</h2></div><button id="clearHistory" class="text-button">Clear</button></div><div id="historyList" class="history-list"><div class="empty-state">Your calculations will appear here.</div></div></div>
+            </div>
+          </div>
+        </section>
+        <section class="view hidden" id="view-graph">
+          <div class="page-heading"><div><p class="eyebrow">ANALYSIS / FUNCTIONS</p><h1>Function graph</h1><p class="muted">Plot a real-valued expression using the current window bounds.</p></div></div>
+          <div class="panel graph-panel"><form id="graphForm" class="graph-controls"><label>Function<input id="graphExpression" value="sin(x)" spellcheck="false"></label><label>X min<input id="xMin" type="number" value="-10" step="any"></label><label>X max<input id="xMax" type="number" value="10" step="any"></label><label>Y min<input id="yMin" type="number" value="-2" step="any"></label><label>Y max<input id="yMax" type="number" value="2" step="any"></label><button class="primary" type="submit">Plot function</button></form><canvas id="mainGraph" width="1200" height="620" aria-label="Function plot"></canvas><p class="muted small" id="graphMessage">Graph is rendered locally in your browser.</p></div>
+        </section>
+        <section class="view hidden" id="view-program">
+          <div class="page-heading"><div><p class="eyebrow">DEVELOPMENT / PROGRAMS</p><h1>Program editor</h1><p class="muted">Draft and validate a small educational BASIC-like program.</p></div></div>
+          <div class="editor-layout"><div class="panel editor-panel"><div class="panel-heading"><div><p class="eyebrow">SOURCE</p><h2>Untitled program</h2></div><button id="runProgram" class="primary">Run preview</button></div><textarea id="programSource" spellcheck="false" aria-label="Program source">10 PRINT "HELLO, WORLD"
+20 LET A = 2 + 3
+30 PRINT A
+40 END</textarea><p class="muted small">Supported preview statements: PRINT, LET name = expression, and END. This is not a full TI-BASIC interpreter.</p></div><div class="panel output-panel"><div class="panel-heading"><div><p class="eyebrow">OUTPUT</p><h2>Run results</h2></div><span class="chip" id="programStatus">IDLE</span></div><pre id="programOutput">Run your program to see output.</pre></div></div>
+        </section>
+        <section class="view hidden" id="view-settings">
+          <div class="page-heading"><div><p class="eyebrow">PREFERENCES / SESSION</p><h1>Settings</h1><p class="muted">Configure the GUI preview environment.</p></div></div>
+          <div class="panel settings-panel"><div class="setting"><div><b>Angle mode</b><p class="muted">Used by trigonometric functions.</p></div><select id="angleMode"><option value="RAD">Radians</option><option value="DEG">Degrees</option></select></div><div class="setting"><div><b>Display precision</b><p class="muted">Maximum significant digits shown in answers.</p></div><select id="precision"><option>6</option><option selected>10</option><option>14</option></select></div><div class="setting"><div><b>Persist session</b><p class="muted">Save preferences and history in this browser.</p></div><label class="switch"><input type="checkbox" id="persist" checked><span></span></label></div><div class="setting"><div><b>Reset workspace</b><p class="muted">Clear saved history and restore default preferences.</p></div><button id="resetSettings" class="ghost">Reset defaults</button></div></div>
+        </section>
+        <footer><span>TI-84 Evo Lab · C++23 core project</span><span>Original, independent implementation</span></footer>
+      </main>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
