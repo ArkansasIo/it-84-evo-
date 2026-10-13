@@ -1,18 +1,20 @@
 # TI-84 Evo-Inspired Calculator Clone (C++23)
 
-An original modular native C++23 graphing-calculator software project. It does not include proprietary firmware, ROM dumps, or copied assets.
+Original, modular graphing-calculator software. No proprietary firmware, ROM dumps, or copied assets are included.
 
-## Current implementation
+## Current modules
 
-- Expression parser with operator precedence, variables, constants `pi` and `e`, and common single-argument math functions.
-- Interactive terminal shell with expression evaluation, variables, graph sampling, summary statistics, memory save/load, and a sandboxed BASIC-like `LET`/`PRINT` runner.
-- Graph sampling API that preserves discontinuities as NaN gaps.
-- Matrix multiplication and determinant using pivoting.
-- Descriptive statistics and linear regression.
-- Versioned persistent key/value memory storage.
-- CMake build and unit tests.
+- Numeric expression parser, constants, variables, and common single-argument functions.
+- Interactive terminal shell with expressions, variables, graph sampling, statistics, memory save/load and restricted BASIC-like programs.
+- Graph sampling API with discontinuity gaps.
+- Matrix multiply/determinant plus transpose, inverse, and reduced row-echelon form.
+- Summary statistics, linear regression, finite-difference derivative, Simpson integration, and bisection root solver.
+- UI foundations: key identity/layout, RGBA framebuffer, menu selection state, calculator screen/input/history session.
+- Dependency-free unit tests and GitHub Actions CI.
 
-## Build (Windows / Visual Studio 2022)
+## Build on Windows
+
+Install Visual Studio 2022 with the Desktop development with C++ workload and CMake support.
 
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
@@ -21,7 +23,7 @@ ctest --test-dir build -C Release --output-on-failure
 .\build\Release\ti84evo.exe
 ```
 
-## Build (Linux / macOS)
+## Build on Linux/macOS
 
 Requires CMake 3.20+ and a C++23 compiler.
 
@@ -32,40 +34,37 @@ ctest --test-dir build --output-on-failure
 ./build/ti84evo
 ```
 
-## Shell commands
+## Console commands
 
-- `:help` — command summary
+- `:help` — help
 - `:let A = 12/3` — define variable
 - `:vars` — list variables
 - `:graph sin(x)` — sample a function
 - `:stats 2,4,6,8` — descriptive statistics
-- `:save memory.mem` / `:load memory.mem` — save or load memory store
-- `:run examples/demo.bas` — run a limited BASIC-like program
+- `:save memory.mem` / `:load memory.mem` — memory persistence
+- `:run examples/demo.bas` — run limited BASIC-like source
 - `:quit` — exit
 
-## Structure
+## Layout
 
 ```text
-include/ti84/core/       expression and calculator interfaces
-include/ti84/graph/      graphing API
-include/ti84/math/       matrix and statistics APIs
-include/ti84/storage/    persistent memory API
-include/ti84/program/    restricted BASIC-like runtime API
-src/app/                 terminal frontend
-src/core/                expression evaluator and calculator
-src/graph/               graph sampling
-src/math/                matrix and statistics implementations
-src/storage/             memory persistence
-src/program/             BASIC-like runtime
-tests/                   test suite
-docs/                    architecture and roadmap
-examples/                sample program
+include/ti84/core/       expression parser, calculator facade, Result
+include/ti84/graph/      graph window and sampling API
+include/ti84/math/       matrices, matrix operations, statistics, numerical methods
+include/ti84/storage/    versioned memory persistence
+include/ti84/program/    restricted BASIC-like runtime
+include/ti84/ui/         keypad definitions, framebuffer, menu, session state
+src/                     implementations and terminal frontend
+tests/                   core and UI/math tests
+examples/                sample BASIC-like program
+docs/                    architecture, features, roadmap, development
+.github/workflows/       CMake build/test CI
 ```
 
-## Limitations
+## Honest limitations
 
-This is a working calculator-software foundation, not a cycle-accurate hardware emulator or full graphical LCD/keypad application. Degree-mode conversion, complex-number evaluation, symbolic algebra, a full TI-BASIC implementation, GUI, and device-level compatibility are not yet implemented.
+This is not yet a complete graphical or cycle-accurate hardware emulator. The keypad and framebuffer are UI abstractions; there is no finished GUI renderer, pixel-perfect shell, complete TI-BASIC dialect, complex-number expression support, symbolic algebra, device link protocol, or proprietary device compatibility. Degree-mode conversion is declared in settings but not yet wired into expression evaluation.
 
-## License
+## Security and licensing
 
-MIT. This is original software and is not affiliated with or endorsed by Texas Instruments.
+The BASIC-like runtime supports only a limited set of statements and does not execute shell commands or native code. Original project code is MIT licensed; see `LICENSE`. The project is independent and not affiliated with Texas Instruments.
