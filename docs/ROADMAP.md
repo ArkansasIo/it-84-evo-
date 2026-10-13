@@ -1,38 +1,33 @@
 # Roadmap
 
-## Phase 1 — numerical foundation
-- [x] C++23 and CMake project
-- [x] Expression parser and variables
+## Numerical core
+- [x] C++23/CMake project and expression parser
 - [x] Graph sampling API
-- [x] Matrix multiply and determinant
-- [x] Matrix transpose, inverse and RREF
+- [x] Matrix multiply, determinant, transpose, inverse and RREF
 - [x] Summary statistics and linear regression
-- [x] Numerical derivative, Simpson integration and bisection
-- [x] Versioned memory persistence
-- [x] Restricted BASIC-like runtime
-- [x] Core and UI/math tests
+- [x] Derivative, Simpson integration and bisection root solver
+- [x] Complex helper functions and normal/binomial probability helpers
+- [x] Versioned memory and restricted BASIC-like runtime
 
-## Phase 2 — calculator behavior
-- [ ] Apply degree/radian mode to trig functions
-- [ ] Complex number type and complex expression support
-- [ ] List editor, probability distributions and hypothesis tests
-- [ ] Additional regressions and matrix/vector operations
-- [ ] Error recovery and expression history persistence
-- [ ] Extend programming runtime with safe branching and loops plus execution budgets
+## Calculator behavior
+- [ ] Wire degree/radian mode into trig functions
+- [ ] Integrate complex numbers into expression parsing/evaluation
+- [ ] Add probability distributions, confidence intervals and hypothesis tests
+- [ ] Expand list/matrix editing and regression families
+- [ ] Extend the safe program runtime with bounded loops and conditional statements
 
-## Phase 3 — graphical front end
-- [x] RGBA framebuffer foundation
-- [x] Key identity/layout definitions
-- [x] Menu and session state models
-- [ ] SDL2 or Qt renderer target
-- [ ] Draw text, fonts, screen chrome and keypad
-- [ ] Mouse/touch and keyboard key events
-- [ ] Graph rendering, trace cursor, pan/zoom and table
-- [ ] Settings and modal menu navigation
+## Graphical front end
+- [x] RGBA framebuffer
+- [x] Key identity/layout and expression input mapping
+- [x] Menu and calculator session state
+- [x] Framebuffer graph/grid/axis renderer
+- [ ] SDL2 or Qt window and event loop
+- [ ] Text/font drawing and calculator shell
+- [ ] Clickable keypad, menus, settings and dialogs
+- [ ] Trace cursor, pan/zoom, graph table and multiple plotted functions
 
-## Phase 4 — quality
-- [x] GitHub Actions configure/build/test workflow
-- [ ] Verify CI green on GitHub Actions
+## Quality
+- [x] GitHub Actions CMake build/test workflow
+- [ ] Verify latest CI is green
 - [ ] Sanitizer and parser/file-loader fuzz builds
-- [ ] Numerical error analysis and benchmarks
-- [ ] Cross-platform MSVC, GCC and Clang test matrix
+- [ ] MSVC/GCC/Clang matrix and numerical benchmarks
