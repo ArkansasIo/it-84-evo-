@@ -2,80 +2,124 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const state = { angle: "RAD", precision: 10, persist: true, history: [], ans: 0, lastGraph: "sin(x)" };
-  const STORAGE_KEY = "ti84evo-gui-preview-v1";
-  const safeFunctions = {
-    sin: Math.sin, cos: Math.cos, tan: Math.tan, asin: Math.asin, acos: Math.acos, atan: Math.atan,
-    sqrt: Math.sqrt, abs: Math.abs, ln: Math.log, log: Math.log10, exp: Math.exp,
-    floor: Math.floor, ceil: Math.ceil, round: Math.round, min: Math.min, max: Math.max
+  const storageKey = "ti84evo-gui-preview-v1";
+  const functions = {
+    sin: Math.sin, cos: Math.cos, tan: Math.tan,
+    asin: Math.asin, acos: Math.acos, atan: Math.atan,
+    sqrt: Math.sqrt, abs: Math.abs, ln: Math.log, log: Math.log10,
+    exp: Math.exp, floor: Math.floor, ceil: Math.ceil, round: Math.round,
+    min: Math.min, max: Math.max
   };
+
   function setError(message = "") { $("errorDisplay").textContent = message; }
-  function normalizeExpression(source) {
-    return source.trim().replace(/×/g, "*").replace(/÷/g, "/").replace(/π/g, "pi").replace(/−/g, "-").replace(/\^/g, "**");
-  }
-  function evaluate(source, vars = {}) {
-    const raw = normalizeExpression(source);
-    if (!raw) throw new Error("Enter an expression first.");
-    if (raw.length > 500) throw new Error("Expression is too long (maximum 500 characters).");
-    // Token whitelist: evaluation runs a generated expression containing only numbers, operators,
-    // parentheses, commas, and allow-listed identifiers. No property access or arbitrary code.
-    const identifierPattern = /[A-Za-z_][A-Za-z_0-9]*/g;
-    const converted = raw.replace(identifierPattern, (name) => {
-      const lower = name.toLowerCase();
-      if (lower === "pi") return String(Math.PI);
-      if (lower === "e") return String(Math.E);
-      if (lower === "ans") return String(state.ans);
-      if (Object.prototype.hasOwnProperty.call(vars, name)) return String(vars[name]);
-      if (Object.prototype.hasOwnProperty.call(vars, lower)) return String(vars[lower]);
-      if (Object.prototype.hasOwnProperty.call(safeFunctions, lower)) return lower;
-      if (lower === "x") return "x";
-      throw new Error("Unknown variable or function: " + name);
-    });
-    if (/[^0-9+\-*/%.(),\sA-Za-z_]/.test(converted)) throw new Error("Unsupported character in expression.");
-    if (/(^|[^A-Za-z_])(?:window|document|globalThis|constructor|prototype|__proto__)([^A-Za-z_]|$)/i.test(converted)) throw new Error("Identifier is not allowed.");
-    const identifiers = converted.match(/[A-Za-z_][A-Za-z_0-9]*/g) || [];
-    const allowed = new Set([...Object.keys(safeFunctions), "x"]);
-    for (const id of identifiers) if (!allowed.has(id)) throw new Error("Unsupported identifier: " + id);
-    // A parser-like constrained function is used only after lexical validation, with an explicit environment.
-    const names = [...Object.keys(safeFunctions), "x"];
-    const values = [...Object.values(safeFunctions), vars.x ?? 0];
-    const fn = new Function(...names, '"use strict"; return (' + converted + ');');
-    const value = fn(...values);
-    if (typeof value !== "number" || !Number.isFinite(value)) throw new Error("Result is not a finite real number.");
-    return value;
-  }
   function format(value) {
     if (!Number.isFinite(value)) return "Undefined";
     return Number(value.toPrecision(state.precision)).toString();
   }
-  function toRadians(v) { return state.angle === "DEG" ? v * Math.PI / 180 : v; }
-  function displayEvaluate(source, vars = {}) {
-    // Convert simple trig calls in degree mode before invoking the safe numeric evaluator.
-    if (state.angle === "DEG") {
-      source = source.replace(/\b(sin|cos|tan)\s*\(\s*([^()]+)\s*\)/gi, (all, name, arg) => name + "((" + arg + ")*pi/180)");
-      // inverse trig returns radians internally; TI-style degree conversion for top-level inverse calls.
-      source = source.replace(/\b(a(?:sin|cos|tan))\s*\(/gi, "($1(").replace(/\b(asin|acos|atan)\(([^()]+)\)/gi, "($1($2)*180/pi)");
+  function normalize(source) {
+    return source.trim().replace(/×/g, "*").replace(/÷/g, "/")
+      .replace(/π/g, "pi").replace(/−/g, "-").replace(/\^/g, "**");
+  }
+
+  // Small recursive-descent parser: no eval/Function, property access, or arbitrary JS.
+  function evaluate(source, variables = {}) {
+    const input = normalize(source);
+    if (!input) throw new Error("Enter an expression first.");
+    if (input.length > 500) throw new Error("Expression is too long.");
+    let pos = 0;
+    const skip = () => { while (/\s/.test(input[pos] || "") && pos < input.length) pos++; };
+    const eat = (token) => {
+      skip();
+      if (input.slice(pos, pos + token.length) === token) { pos += token.length; return true; }
+      return false;
+    };
+    const expect = (token) => { if (!eat(token)) throw new Error("Expected '" + token + "' at position " + (pos + 1)); };
+    function expression() {
+      let value = term();
+      while (true) {
+        if (eat("+")) value += term();
+        else if (eat("-")) value -= term();
+        else return value;
+      }
     }
-    return evaluate(source, vars);
+    function term() {
+      let value = unary();
+      while (true) {
+        if (eat("*")) value *= unary();
+        else if (eat("/")) { const divisor = unary(); if (divisor === 0) throw new Error("Division by zero."); value /= divisor; }
+        else if (eat("%")) { const divisor = unary(); if (divisor === 0) throw new Error("Division by zero."); value %= divisor; }
+        else return value;
+      }
+    }
+    function unary() {
+      if (eat("+")) return unary();
+      if (eat("-")) return -unary();
+      return power();
+    }
+    function power() {
+      let value = primary();
+      if (eat("**") || eat("^")) value = Math.pow(value, unary());
+      return value;
+    }
+    function primary() {
+      skip();
+      if (eat("(")) { const v = expression(); expect(")"); return v; }
+      const rest = input.slice(pos);
+      const number = rest.match(/^(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/i);
+      if (number) { pos += number[0].length; return Number(number[0]); }
+      const identifier = rest.match(/^[A-Za-z_][A-Za-z_0-9]*/);
+      if (identifier) {
+        pos += identifier[0].length;
+        const name = identifier[0], lower = name.toLowerCase();
+        if (lower === "pi") return Math.PI;
+        if (lower === "e") return Math.E;
+        if (lower === "ans") return state.ans;
+        if (Object.prototype.hasOwnProperty.call(variables, name)) return variables[name];
+        if (Object.prototype.hasOwnProperty.call(variables, lower)) return variables[lower];
+        if (Object.prototype.hasOwnProperty.call(functions, lower)) {
+          expect("(");
+          const args = [expression()];
+          while (eat(",")) args.push(expression());
+          expect(")");
+          if ((lower === "min" || lower === "max") ? args.length < 1 : args.length !== 1)
+            throw new Error("Wrong argument count for " + name + ".");
+          const adjusted = args.slice();
+          if (state.angle === "DEG" && ["sin", "cos", "tan"].includes(lower)) adjusted[0] *= Math.PI / 180;
+          const result = functions[lower](...adjusted);
+          return state.angle === "DEG" && ["asin", "acos", "atan"].includes(lower) ? result * 180 / Math.PI : result;
+        }
+        if (lower === "x" && Object.prototype.hasOwnProperty.call(variables, "x")) return variables.x;
+        throw new Error("Unknown variable or function: " + name);
+      }
+      throw new Error("Unexpected token at position " + (pos + 1));
+    }
+    const result = expression();
+    skip();
+    if (pos !== input.length) throw new Error("Unexpected input at position " + (pos + 1));
+    if (typeof result !== "number" || !Number.isFinite(result)) throw new Error("Result is not a finite real number.");
+    return result;
   }
-  function record(expr, result) {
-    state.ans = result;
-    state.history.unshift({ expr, result: format(result), at: new Date().toISOString() });
+
+  function record(expression, value) {
+    state.ans = value;
+    state.history.unshift({ expression, result: format(value), at: new Date().toISOString() });
     state.history = state.history.slice(0, 100);
-    renderHistory(); persist();
+    renderHistory();
+    persist();
   }
-  function runCalculation(expr = $("expressionInput").value) {
+  function calculate(expression = $("expressionInput").value) {
     setError();
     try {
-      const result = displayEvaluate(expr);
-      $("expressionInput").value = expr;
-      $("expressionDisplay").textContent = expr;
+      const result = evaluate(expression);
+      $("expressionInput").value = expression;
+      $("expressionDisplay").textContent = expression;
       $("resultDisplay").textContent = format(result);
-      record(expr, result);
+      record(expression, result);
       return result;
-    } catch (err) {
-      $("expressionDisplay").textContent = expr || "0";
+    } catch (error) {
+      $("expressionDisplay").textContent = expression || "0";
       $("resultDisplay").textContent = "Error";
-      setError(err.message || String(err));
+      setError(error.message || String(error));
       return null;
     }
   }
@@ -83,116 +127,190 @@
     $("historyCount").textContent = state.history.length + (state.history.length === 1 ? " entry" : " entries");
     const host = $("historyList");
     host.replaceChildren();
-    if (!state.history.length) { host.innerHTML = '<div class="empty-state">Your calculations will appear here.</div>'; return; }
+    if (!state.history.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.textContent = "Your calculations will appear here.";
+      host.append(empty);
+      return;
+    }
     state.history.slice(0, 12).forEach((entry) => {
       const button = document.createElement("button");
       button.className = "history-entry";
       const left = document.createElement("span");
-      const expr = document.createElement("span"); expr.className = "h-expr"; expr.textContent = entry.expr;
-      const result = document.createElement("span"); result.className = "h-result"; result.textContent = "= " + entry.result;
+      const expr = document.createElement("span");
+      const result = document.createElement("span");
+      const time = document.createElement("small");
+      expr.className = "h-expr";
+      expr.textContent = entry.expression;
+      result.className = "h-result";
+      result.textContent = "= " + entry.result;
+      time.textContent = new Date(entry.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       left.append(expr, result);
-      const date = document.createElement("small"); date.textContent = new Date(entry.at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-      button.append(left, date);
-      button.addEventListener("click", () => { $("expressionInput").value = entry.expr; $("expressionInput").focus(); });
+      button.append(left, time);
+      button.addEventListener("click", () => { $("expressionInput").value = entry.expression; $("expressionInput").focus(); });
       host.append(button);
     });
   }
-  function drawGraph(canvas, expr, windowBounds) {
+
+  function niceStep(raw) {
+    const power = Math.pow(10, Math.floor(Math.log10(Math.max(raw, 1e-9))));
+    const n = raw / power;
+    return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * power;
+  }
+  function drawGraph(canvas, source, bounds) {
     if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    const w = canvas.width, h = canvas.height;
-    const { xMin, xMax, yMin, yMax } = windowBounds;
-    ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#0b1420"; ctx.fillRect(0,0,w,h);
-    const px = (x) => (x - xMin) / (xMax - xMin) * w;
-    const py = (y) => h - (y - yMin) / (yMax - yMin) * h;
-    ctx.lineWidth = 1; ctx.strokeStyle = "#203247"; ctx.fillStyle = "#7c91a9"; ctx.font = "12px monospace";
-    const xStep = niceStep((xMax-xMin)/8), yStep = niceStep((yMax-yMin)/6);
-    ctx.beginPath();
-    for (let x = Math.ceil(xMin/xStep)*xStep; x <= xMax; x += xStep) { const X=px(x); ctx.moveTo(X,0);ctx.lineTo(X,h); }
-    for (let y = Math.ceil(yMin/yStep)*yStep; y <= yMax; y += yStep) { const Y=py(y);ctx.moveTo(0,Y);ctx.lineTo(w,Y); }
+    const ctx = canvas.getContext("2d"), width = canvas.width, height = canvas.height;
+    const { xMin, xMax, yMin, yMax } = bounds;
+    ctx.clearRect(0, 0, width, height);
+    ctx.fillStyle = "#0b1420"; ctx.fillRect(0, 0, width, height);
+    const px = x => (x - xMin) / (xMax - xMin) * width;
+    const py = y => height - (y - yMin) / (yMax - yMin) * height;
+    const xStep = niceStep((xMax - xMin) / 8), yStep = niceStep((yMax - yMin) / 6);
+    ctx.lineWidth = 1; ctx.strokeStyle = "#203247"; ctx.beginPath();
+    for (let x = Math.ceil(xMin / xStep) * xStep; x <= xMax; x += xStep) { ctx.moveTo(px(x), 0); ctx.lineTo(px(x), height); }
+    for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) { ctx.moveTo(0, py(y)); ctx.lineTo(width, py(y)); }
     ctx.stroke();
-    ctx.strokeStyle="#657b92";ctx.lineWidth=1.4;ctx.beginPath();
-    if(xMin<=0&&xMax>=0){ctx.moveTo(px(0),0);ctx.lineTo(px(0),h)}
-    if(yMin<=0&&yMax>=0){ctx.moveTo(0,py(0));ctx.lineTo(w,py(0))}
+    ctx.strokeStyle = "#657b92"; ctx.lineWidth = 1.3; ctx.beginPath();
+    if (xMin <= 0 && xMax >= 0) { ctx.moveTo(px(0), 0); ctx.lineTo(px(0), height); }
+    if (yMin <= 0 && yMax >= 0) { ctx.moveTo(0, py(0)); ctx.lineTo(width, py(0)); }
     ctx.stroke();
-    ctx.fillStyle="#90a4bb";
-    if(yMin<=0&&yMax>=0) for(let x=Math.ceil(xMin/xStep)*xStep;x<=xMax;x+=xStep){if(Math.abs(x)>1e-8)ctx.fillText(String(Number(x.toPrecision(4))),Math.min(w-35,Math.max(2,px(x)+4)),Math.min(h-4,Math.max(12,py(0)+14)))}
-    if(xMin<=0&&xMax>=0) for(let y=Math.ceil(yMin/yStep)*yStep;y<=yMax;y+=yStep){if(Math.abs(y)>1e-8)ctx.fillText(String(Number(y.toPrecision(4))),Math.min(w-35,Math.max(2,px(0)+5)),Math.min(h-4,Math.max(12,py(y)-4)))}
-    ctx.strokeStyle="#6de0c0";ctx.lineWidth=2.4;ctx.beginPath();let started=false, prevY=null;
-    for(let i=0;i<=Math.min(w*2,2400);i++){
-      const x=xMin+(xMax-xMin)*i/Math.min(w*2,2400);let y;
-      try{y=displayEvaluate(expr,{x})}catch{started=false;prevY=null;continue}
-      if(!Number.isFinite(y)||y<yMin-10*(yMax-yMin)||y>yMax+10*(yMax-yMin)){started=false;prevY=null;continue}
-      const Y=py(y);
-      if(!started||prevY===null||Math.abs(Y-prevY)>h*.7){ctx.moveTo(px(x),Y);started=true}else ctx.lineTo(px(x),Y);
-      prevY=Y;
+    ctx.fillStyle = "#90a4bb"; ctx.font = "12px monospace";
+    if (yMin <= 0 && yMax >= 0) for (let x = Math.ceil(xMin / xStep) * xStep; x <= xMax; x += xStep) if (Math.abs(x) > 1e-9) ctx.fillText(String(+x.toPrecision(4)), Math.min(width - 35, Math.max(2, px(x) + 4)), Math.min(height - 4, Math.max(12, py(0) + 14)));
+    if (xMin <= 0 && xMax >= 0) for (let y = Math.ceil(yMin / yStep) * yStep; y <= yMax; y += yStep) if (Math.abs(y) > 1e-9) ctx.fillText(String(+y.toPrecision(4)), Math.min(width - 35, Math.max(2, px(0) + 5)), Math.min(height - 4, Math.max(12, py(y) - 4)));
+    ctx.strokeStyle = "#6de0c0"; ctx.lineWidth = 2.4; ctx.beginPath();
+    let started = false, previousY = null;
+    const samples = Math.min(width * 2, 2400);
+    for (let i = 0; i <= samples; i++) {
+      const x = xMin + (xMax - xMin) * i / samples;
+      let y;
+      try { y = evaluate(source, { x }); } catch { started = false; previousY = null; continue; }
+      if (y < yMin - 10 * (yMax - yMin) || y > yMax + 10 * (yMax - yMin)) { started = false; previousY = null; continue; }
+      const Y = py(y);
+      if (!started || previousY === null || Math.abs(Y - previousY) > height * .7) { ctx.moveTo(px(x), Y); started = true; }
+      else ctx.lineTo(px(x), Y);
+      previousY = Y;
     }
     ctx.stroke();
   }
-  function niceStep(raw) { const p=Math.pow(10,Math.floor(Math.log10(Math.max(raw,1e-9))));const n=raw/p;return (n<1.5?1:n<3.5?2:n<7.5?5:10)*p; }
-  function currentBounds(prefix = "") {
-    const val = (id, fallback) => { const n=Number($(prefix+id).value); return Number.isFinite(n)?n:fallback; };
-    return {xMin:val("xMin",-10),xMax:val("xMax",10),yMin:val("yMin",-2),yMax:val("yMax",2)};
+  function getBounds() {
+    return { xMin: Number($("xMin").value), xMax: Number($("xMax").value), yMin: Number($("yMin").value), yMax: Number($("yMax").value) };
   }
-  function updatePlots(expr = state.lastGraph) {
-    state.lastGraph = expr;
-    drawGraph($("miniGraph"), expr, {xMin:-10,xMax:10,yMin:-2,yMax:2});
-    drawGraph($("mainGraph"), $("graphExpression")?.value || expr, currentBounds());
-    $("plotExpression").textContent = expr;
+  function updatePlots(expression = state.lastGraph) {
+    state.lastGraph = expression;
+    drawGraph($("miniGraph"), expression, { xMin: -10, xMax: 10, yMin: -2, yMax: 2 });
+    drawGraph($("mainGraph"), $("graphExpression").value || expression, getBounds());
+    $("plotExpression").textContent = expression;
   }
   function navigate(view) {
-    document.querySelectorAll(".view").forEach((el) => el.classList.toggle("hidden", el.id !== "view-"+view));
-    document.querySelectorAll(".nav").forEach((el) => el.classList.toggle("active", el.dataset.view === view));
+    document.querySelectorAll(".view").forEach(el => el.classList.toggle("hidden", el.id !== "view-" + view));
+    document.querySelectorAll(".nav").forEach(el => el.classList.toggle("active", el.dataset.view === view));
     if (view === "graph") updatePlots();
   }
   function persist() {
     if (!state.persist) return;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify({angle:state.angle,precision:state.precision,persist:state.persist,history:state.history,ans:state.ans,lastGraph:state.lastGraph})); } catch {}
+    try { localStorage.setItem(storageKey, JSON.stringify({ angle: state.angle, precision: state.precision, persist: state.persist, history: state.history, ans: state.ans, lastGraph: state.lastGraph })); } catch {}
+  }
+  function updateControls() {
+    $("angleMode").value = state.angle;
+    $("angleChip").textContent = state.angle;
+    $("modeLabel").textContent = state.angle + " · FLOAT";
+    $("precision").value = String(state.precision);
+    $("persist").checked = state.persist;
+    $("graphExpression").value = state.lastGraph;
   }
   function load() {
     try {
-      const saved=JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
-      if(saved&&typeof saved==="object"){state.angle=saved.angle==="DEG"?"DEG":"RAD";state.precision=[6,10,14].includes(Number(saved.precision))?Number(saved.precision):10;state.persist=saved.persist!==false;state.history=Array.isArray(saved.history)?saved.history.filter(x=>x&&typeof x.expr==="string"&&typeof x.result==="string").slice(0,100):[];state.ans=Number(saved.ans)||0;state.lastGraph=typeof saved.lastGraph==="string"?saved.lastGraph:"sin(x)";}
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      if (saved && typeof saved === "object") {
+        state.angle = saved.angle === "DEG" ? "DEG" : "RAD";
+        state.precision = [6, 10, 14].includes(Number(saved.precision)) ? Number(saved.precision) : 10;
+        state.persist = saved.persist !== false;
+        state.history = Array.isArray(saved.history) ? saved.history.filter(e => e && typeof e.expression === "string" && typeof e.result === "string").slice(0, 100) : [];
+        state.ans = Number(saved.ans) || 0;
+        state.lastGraph = typeof saved.lastGraph === "string" ? saved.lastGraph : "sin(x)";
+      }
     } catch {}
-    $("angleMode").value=state.angle;$("angleChip").textContent=state.angle;$("modeLabel").textContent=state.angle+" · FLOAT";$("precision").value=String(state.precision);$("persist").checked=state.persist;$("graphExpression").value=state.lastGraph;
+    updateControls();
   }
   function exportWorkspace() {
-    const payload={format:"ti84evo-gui-workspace",version:1,settings:{angle:state.angle,precision:state.precision,persist:state.persist},history:state.history,ans:state.ans,lastGraph:state.lastGraph,program:$("programSource").value};
-    const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-    const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="ti84evo-workspace.json";a.click();URL.revokeObjectURL(url);
+    const payload = { format: "ti84evo-gui-workspace", version: 1, settings: { angle: state.angle, precision: state.precision, persist: state.persist }, history: state.history, ans: state.ans, lastGraph: state.lastGraph, program: $("programSource").value };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const link = document.createElement("a"); link.href = url; link.download = "ti84evo-workspace.json"; link.click(); URL.revokeObjectURL(url);
   }
   function importWorkspace(file) {
-    const reader=new FileReader();
-    reader.onload=()=>{try{const d=JSON.parse(String(reader.result));if(d.format!=="ti84evo-gui-workspace"||d.version!==1)throw new Error("Unsupported workspace format.");
-      const s=d.settings||{};state.angle=s.angle==="DEG"?"DEG":"RAD";state.precision=[6,10,14].includes(Number(s.precision))?Number(s.precision):10;state.persist=s.persist!==false;state.history=Array.isArray(d.history)?d.history.filter(x=>x&&typeof x.expr==="string"&&typeof x.result==="string").slice(0,100):[];state.ans=Number(d.ans)||0;state.lastGraph=typeof d.lastGraph==="string"?d.lastGraph:"sin(x)";if(typeof d.program==="string")$("programSource").value=d.program;loadControls();renderHistory();updatePlots();persist();}catch(e){alert("Could not import workspace: "+e.message)}};
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(String(reader.result));
+        if (data.format !== "ti84evo-gui-workspace" || data.version !== 1) throw new Error("Unsupported workspace format.");
+        const settings = data.settings || {};
+        state.angle = settings.angle === "DEG" ? "DEG" : "RAD";
+        state.precision = [6, 10, 14].includes(Number(settings.precision)) ? Number(settings.precision) : 10;
+        state.persist = settings.persist !== false;
+        state.history = Array.isArray(data.history) ? data.history.filter(e => e && typeof e.expression === "string" && typeof e.result === "string").slice(0, 100) : [];
+        state.ans = Number(data.ans) || 0;
+        state.lastGraph = typeof data.lastGraph === "string" ? data.lastGraph : "sin(x)";
+        if (typeof data.program === "string") $("programSource").value = data.program;
+        updateControls(); renderHistory(); updatePlots(); persist();
+      } catch (error) { alert("Import failed: " + error.message); }
+    };
     reader.readAsText(file);
   }
-  function loadControls(){ $("angleMode").value=state.angle;$("angleChip").textContent=state.angle;$("modeLabel").textContent=state.angle+" · FLOAT";$("precision").value=String(state.precision);$("persist").checked=state.persist;$("graphExpression").value=state.lastGraph; }
   function runProgram() {
-    const lines=$("programSource").value.split(/\r?\n/);const vars={};const output=[];let ended=false;
-    for(let i=0;i<lines.length&&i<1000;i++){
-      let line=lines[i].trim().replace(/^\d+\s*/,"");if(!line||line.startsWith("'")||line.startsWith("REM "))continue;
-      if(/^END$/i.test(line)){ended=true;break}
-      let m=line.match(/^PRINT\s+(.+)$/i);
-      if(m){let value=m[1].trim();const quoted=value.match(/^"(.*)"$/);try{output.push(quoted?quoted[1]:format(displayEvaluate(value,vars)))}catch(e){output.push("Line "+(i+1)+": "+e.message);$("programStatus").textContent="ERROR";$("programOutput").textContent=output.join("\n");return}}
-      else if((m=line.match(/^LET\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$/i))){try{vars[m[1]]=displayEvaluate(m[2],vars)}catch(e){output.push("Line "+(i+1)+": "+e.message);$("programStatus").textContent="ERROR";$("programOutput").textContent=output.join("\n");return}}
-      else {output.push("Line "+(i+1)+": Unsupported statement");$("programStatus").textContent="ERROR";$("programOutput").textContent=output.join("\n");return}
+    const lines = $("programSource").value.split(/\r?\n/), variables = {}, output = [];
+    let ended = false;
+    for (let i = 0; i < lines.length && i < 1000; i++) {
+      const line = lines[i].trim().replace(/^\d+\s*/, "");
+      if (!line || line.startsWith("'") || /^REM\s/i.test(line)) continue;
+      if (/^END$/i.test(line)) { ended = true; break; }
+      let match = line.match(/^PRINT\s+(.+)$/i);
+      if (match) {
+        const value = match[1].trim(), quoted = value.match(/^"(.*)"$/);
+        try { output.push(quoted ? quoted[1] : format(evaluate(value, variables))); }
+        catch (error) { output.push("Line " + (i + 1) + ": " + error.message); $("programStatus").textContent = "ERROR"; $("programOutput").textContent = output.join("\n"); return; }
+      } else if ((match = line.match(/^LET\s+([A-Za-z][A-Za-z0-9_]*)\s*=\s*(.+)$/i))) {
+        try { variables[match[1]] = evaluate(match[2], variables); }
+        catch (error) { output.push("Line " + (i + 1) + ": " + error.message); $("programStatus").textContent = "ERROR"; $("programOutput").textContent = output.join("\n"); return; }
+      } else {
+        output.push("Line " + (i + 1) + ": Unsupported statement"); $("programStatus").textContent = "ERROR"; $("programOutput").textContent = output.join("\n"); return;
+      }
     }
-    $("programStatus").textContent="DONE";$("programOutput").textContent=output.join("\n")||"(no output)";if(!ended) $("programOutput").textContent+="\n\n[Preview stopped at end of source]";
+    $("programStatus").textContent = "DONE";
+    $("programOutput").textContent = output.join("\n") || "(no output)";
+    if (!ended && lines.length > 1000) $("programOutput").textContent += "\n\n[Stopped after 1000 lines]";
   }
-  $("calcForm").addEventListener("submit",(e)=>{e.preventDefault();const result=runCalculation();if(result!==null)updatePlots(state.lastGraph);});
-  $("keypad").addEventListener("click",(e)=>{const b=e.target.closest("button");if(!b)return;const input=$("expressionInput");if(b.dataset.key){input.value+=b.dataset.key;input.focus()}else if(b.dataset.action==="clear"){input.value="";$("expressionDisplay").textContent="0";$("resultDisplay").textContent="Ready";setError();input.focus()}else if(b.dataset.action==="backspace"){input.value=input.value.slice(0,-1);input.focus()}else if(b.dataset.action==="equals"){const v=runCalculation();if(v!==null)updatePlots(state.lastGraph)}});
-  document.querySelectorAll("[data-view]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.view)));
-  document.querySelectorAll("[data-navigate]").forEach(b=>b.addEventListener("click",()=>navigate(b.dataset.navigate)));
-  $("clearHistory").addEventListener("click",()=>{state.history=[];renderHistory();persist()});
-  $("graphForm").addEventListener("submit",(e)=>{e.preventDefault();const b=currentBounds();if(!(b.xMin<b.xMax&&b.yMin<b.yMax)){ $("graphMessage").textContent="Bounds invalid: each minimum must be less than its maximum.";return }const expr=$("graphExpression").value.trim();try{displayEvaluate(expr,{x:0});state.lastGraph=expr;updatePlots(expr);$("graphMessage").textContent="Plotted y = "+expr+" · "+(state.angle==="DEG"?"degrees":"radians");persist()}catch(err){$("graphMessage").textContent="Plot error: "+err.message}});
-  $("angleMode").addEventListener("change",(e)=>{state.angle=e.target.value;loadControls();persist();updatePlots()});
-  $("precision").addEventListener("change",(e)=>{state.precision=Number(e.target.value);persist()});
-  $("persist").addEventListener("change",(e)=>{state.persist=e.target.checked;if(state.persist)persist();else localStorage.removeItem(STORAGE_KEY)});
-  $("resetSettings").addEventListener("click",()=>{if(!confirm("Reset saved settings and history?"))return;state.angle="RAD";state.precision=10;state.persist=true;state.history=[];state.ans=0;state.lastGraph="sin(x)";loadControls();renderHistory();updatePlots();persist()});
-  $("exportBtn").addEventListener("click",exportWorkspace);
-  $("importFile").addEventListener("change",(e)=>{if(e.target.files[0])importWorkspace(e.target.files[0]);e.target.value=""});
-  $("runProgram").addEventListener("click",runProgram);
-  load();renderHistory();updatePlots();$("graphMessage").textContent="Graph is rendered locally in your browser.";
+
+  $("calcForm").addEventListener("submit", event => { event.preventDefault(); if (calculate() !== null) updatePlots(); });
+  $("keypad").addEventListener("click", event => {
+    const button = event.target.closest("button"); if (!button) return;
+    const input = $("expressionInput");
+    if (button.dataset.key) { input.value += button.dataset.key; input.focus(); }
+    else if (button.dataset.action === "clear") { input.value = ""; $("expressionDisplay").textContent = "0"; $("resultDisplay").textContent = "Ready"; setError(); input.focus(); }
+    else if (button.dataset.action === "backspace") { input.value = input.value.slice(0, -1); input.focus(); }
+    else if (button.dataset.action === "equals" && calculate() !== null) updatePlots();
+  });
+  document.querySelectorAll("[data-view]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.view)));
+  document.querySelectorAll("[data-navigate]").forEach(button => button.addEventListener("click", () => navigate(button.dataset.navigate)));
+  $("clearHistory").addEventListener("click", () => { state.history = []; renderHistory(); persist(); });
+  $("graphForm").addEventListener("submit", event => {
+    event.preventDefault();
+    const b = getBounds();
+    if (!(Number.isFinite(b.xMin) && Number.isFinite(b.xMax) && Number.isFinite(b.yMin) && Number.isFinite(b.yMax) && b.xMin < b.xMax && b.yMin < b.yMax)) { $("graphMessage").textContent = "Invalid graph bounds."; return; }
+    const expression = $("graphExpression").value.trim();
+    try { evaluate(expression, { x: 0 }); state.lastGraph = expression; updatePlots(expression); $("graphMessage").textContent = "Plotted y = " + expression + " (" + state.angle + ")"; persist(); }
+    catch (error) { $("graphMessage").textContent = "Plot error: " + error.message; }
+  });
+  $("angleMode").addEventListener("change", event => { state.angle = event.target.value; updateControls(); persist(); updatePlots(); });
+  $("precision").addEventListener("change", event => { state.precision = Number(event.target.value); persist(); });
+  $("persist").addEventListener("change", event => { state.persist = event.target.checked; if (state.persist) persist(); else localStorage.removeItem(storageKey); });
+  $("resetSettings").addEventListener("click", () => {
+    if (!confirm("Reset saved settings and history?")) return;
+    Object.assign(state, { angle: "RAD", precision: 10, persist: true, history: [], ans: 0, lastGraph: "sin(x)" });
+    updateControls(); renderHistory(); updatePlots(); persist();
+  });
+  $("exportBtn").addEventListener("click", exportWorkspace);
+  $("importFile").addEventListener("change", event => { if (event.target.files[0]) importWorkspace(event.target.files[0]); event.target.value = ""; });
+  $("runProgram").addEventListener("click", runProgram);
+  load(); renderHistory(); updatePlots(); $("graphMessage").textContent = "Graph is rendered locally in your browser.";
 })();
